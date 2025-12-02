@@ -26,7 +26,12 @@ class stage_promoter:
 
     def parse_catalog_yaml(self):
         # objs = yaml.safe_load_all(open(self.catalog_yaml_path))
-        objs = ruyaml.load_all(open(self.catalog_yaml_path), Loader=ruyaml.RoundTripLoader, preserve_quotes=True)
+        with open(self.catalog_yaml_path) as f:
+            objs = ruyaml.load_all(
+                f,
+                Loader=ruyaml.RoundTripLoader,
+                preserve_quotes=True,
+            )
         print(type(objs))
         catalog_dict = defaultdict(dict)
         for obj in objs:
@@ -34,7 +39,8 @@ class stage_promoter:
         return catalog_dict
 
     def patch_current_release_bundle_schema(self):
-        objs = yaml.safe_load_all(open(self.release_catalog_yaml_path))
+        with open(self.release_catalog_yaml_path) as f:
+            objs = yaml.safe_load_all(f)
         release_catalog_dict = defaultdict(dict)
         BUNDLE_SCHEMA = 'olm.bundle'
         for obj in objs:
@@ -50,7 +56,9 @@ class stage_promoter:
 
 
     def parse_patch_yaml(self):
-        return yaml.safe_load(open(self.patch_yaml_path))
+        with open(self.patch_yaml_path) as f:
+            return yaml.safe_load(f)
+
     def patch_catalog_yaml(self):
         if 'olm.package' in self.patch_dict['patch']:
             self.patch_olm_package()
@@ -65,9 +73,13 @@ class stage_promoter:
         # yaml.add_representer(str, str_presenter)
         # yaml.representer.SafeRepresenter.add_representer(str, str_presenter)
         # yaml.safe_dump_all(docs, open(self.output_file_path, 'w'), sort_keys=False)
-        ruyaml.dump_all(docs, open(self.output_file_path, 'w'), Dumper=ruyaml.RoundTripDumper,
-                    default_flow_style=False)
-
+        with open(self.output_file_path, "w") as f:
+            ruyaml.dump_all(
+                docs,
+                f,
+                Dumper=ruyaml.RoundTripDumper,
+                default_flow_style=False,
+            )
 
     def patch_olm_package(self):
         SCHEMA = 'olm.package'
