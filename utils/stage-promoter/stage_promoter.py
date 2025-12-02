@@ -8,7 +8,6 @@ import ruamel.yaml as ruyaml
 import json
 from collections import defaultdict
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
-import base64
 import sys
 
 class stage_promoter:
@@ -107,39 +106,47 @@ class snapshot_processor:
         fbc_images = {}
         qc = quay_controller('rhoai')
         time_lapsed = 0
-        def all_fbc_builds_finished():
-            all_versions_covered = True
-            for ocp_version in self.ocp_versions_for_release:
-                if ocp_version not in fbc_images:
-                    all_versions_covered = False
-                    break
-            return all_versions_covered
         print("timeout = ", self.timeout, " sec")
-        while not all_fbc_builds_finished() and time_lapsed < self.timeout:
-            for ocp_version in self.ocp_versions_for_release:
+
+        # only process versions that have not yet been processed
+        remaining = self.ocp_versions_for_release.keys()
+        while remaining and time_lapsed < self.timeout:
+            for ocp_version in remaining:
                 fbc_image_tag = f'ocp-{ocp_version.strip("v")}-{self.rhoai_version}-{self.git_commit}'
-                print(f'getting images for tag - {fbc_image_tag}')
+                print(f"getting images for tag - {fbc_image_tag}")
                 tags = qc.get_all_tags(self.FBC_FRAGMENT_REPO, fbc_image_tag)
                 if not tags:
-                    print(f'no tags found for {fbc_image_tag}, waiting..')
+                    print(f"no tags found for {fbc_image_tag}, waiting..")
+
+                # XXX: what is this supposed to do?
+                # XXX: it loops over all the tags, but the last one with a signature wins.
+                # XXX: should it break after finding the first one?
                 for tag in tags:
                     sig_tag = f'{tag["manifest_digest"].replace(":", "-")}.sig'
                     signature = qc.get_tag_details(self.FBC_FRAGMENT_REPO, sig_tag)
                     if signature:
-                        fbc_images[ocp_version] = f'{self.QUAY_BASE_URI}/{self.FBC_FRAGMENT_REPO}@{tag["manifest_digest"]}'
+                        fbc_images[ocp_version] = (
+                            f'{self.QUAY_BASE_URI}/{self.FBC_FRAGMENT_REPO}@{tag["manifest_digest"]}'
+                        )
+
+            remaining = self.ocp_versions_for_release.keys() - fbc_images.keys()
+
+            # XXX: assume the quay calls + time.sleep = 60 seconds?
+            # XXX: what if the for loop iterates multiple times?
             time.sleep(45)
             time_lapsed += 60
             print("time_lapsed - ", str(60), " sec")
 
-        missing_images = []
-        for ocp_version in self.ocp_versions_for_release:
-            if ocp_version not in fbc_images:
-                fbc_images[ocp_version] = 'NOT_FOUND'
-                missing_images.append(ocp_version)
+        missing_images = sorted(remaining)
+        for ocp_version in remaining:
+            fbc_images[ocp_version] = "NOT_FOUND"
 
-        json.dump(fbc_images, open(self.output_file_path, 'w'))
+        with open(self.output_file_path, "w") as f:
+            json.dump(fbc_images, f)
+
         if missing_images:
-            print('FBC images not found for following OCP versions - ', missing_images)
+            missing = ", ".join(missing_images)
+            print(f"FBC images not found for following OCP versions - {missing}")
             sys.exit(1)
         else:
             slack_message = f':staging: Successfully pushed to stage for {self.rhoai_version}!'
